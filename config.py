@@ -1,0 +1,2 @@
+API_KEY = "AIzaSyC16ULcR3MC36PjlTcZXanJcs5SHQ75UwE"
+MODEL_NAME = "gemini-pro"
