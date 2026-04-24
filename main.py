@@ -8,7 +8,6 @@ import logging
 from typing import Dict
 from pypdf import PdfReader
 
-# הגדרת logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -20,7 +19,6 @@ app.add_middleware(
     allow_methods=["*"],  # מאפשר את כל סוגי הבקשות (POST, GET וכו')
     allow_headers=["*"],  # מאפשר את כל סוגי ה-Headers
 )
-# קבועים
 ALLOWED_EXTENSIONS = {".pdf", ".txt"}
 ENCODING = "utf-8"
 
@@ -41,7 +39,6 @@ async def analyze_file(question: str = Form(...), file: UploadFile = File(...)) 
         HTTPException: באם קובץ לא תקין או שגיאה בעיבוד
     """
     try:
-        # 1️⃣ בדיקת סוג הקובץ
         file_extension = next(
             (ext for ext in ALLOWED_EXTENSIONS if file.filename.endswith(ext)),
             None
@@ -50,7 +47,6 @@ async def analyze_file(question: str = Form(...), file: UploadFile = File(...)) 
             logger.warning(f"סוג קובץ לא תומך: {file.filename}")
             raise HTTPException(400, f"סוג קובץ לא תומך. אנא העלה PDF או TXT")
 
-        # 2️⃣ קריאת תוכן הקובץ עם בדיקת גודל
         content = await file.read()
         if len(content) > MAX_FILE_SIZE_BYTES:
             logger.warning(f"קובץ גדול מדי: {len(content)} bytes")
@@ -59,7 +55,6 @@ async def analyze_file(question: str = Form(...), file: UploadFile = File(...)) 
         if not content:
             raise HTTPException(400, "קובץ ריק. בדוק את הקובץ שהעלית")
 
-        # 3️⃣ חילוץ טקסט בהתאם לסוג הקובץ
         try:
             if file_extension == ".pdf":
                 pdf_reader = PdfReader(io.BytesIO(content))
@@ -78,7 +73,6 @@ async def analyze_file(question: str = Form(...), file: UploadFile = File(...)) 
         if not text.strip():
             raise HTTPException(400, "הקובץ לא מכיל טקסט")
 
-        # 4️⃣ שמירה ב-Vector DB
         try:
             process_and_store(text)
             logger.info(f"עובדו {len(text)} תווים בהצלחה")
@@ -86,14 +80,12 @@ async def analyze_file(question: str = Form(...), file: UploadFile = File(...)) 
             logger.error(f"שגיאה בעיבוד הקובץ: {str(e)}")
             raise HTTPException(500, f"שגיאה בעיבוד הקובץ: {str(e)}")
 
-        # 5️⃣ שליפת המידע הרלוונטי
         try:
             context = query_database(question)
         except Exception as e:
             logger.error(f"שגיאה בחיפוש בDB: {str(e)}")
             raise HTTPException(500, f"שגיאה בחיפוש: {str(e)}")
 
-        # 6️⃣ קבלת תשובה מהסוכן
         try:
             answer = get_sentinel_response(question, context)
             logger.info("תשובה הוחזרה בהצלחה")

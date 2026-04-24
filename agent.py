@@ -16,13 +16,12 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # קבועים
-MODEL_NAME = "models/gemini-1.5-flash"  # ✅ מודל generative נכון
+MODEL_NAME = "models/gemini-1.5-flash"
 API_URL_TEMPLATE = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
 CONTENT_TYPE = "application/json"
 MAX_HISTORY_LENGTH = 10
 REQUEST_TIMEOUT = 30
 CA_BUNDLE = os.getenv("REQUESTS_CA_BUNDLE")
-# זיכרון השיחה - נשמר כרשימה של הודעות
 chat_history: List[Dict] = []
 
 
@@ -66,20 +65,16 @@ def get_sentinel_response(user_question: str, context: str) -> str:
     """
     global chat_history
 
-    # בדיקה שיש API key
     if not API_KEY:
         logger.error("API_KEY לא הוגדר")
         return "שגיאה: מפתח ה-API לא הוגדר. בדוק את קובץ .env"
 
     try:
-        # בניית URL
         url = f"{API_URL_TEMPLATE.format(model=MODEL_NAME)}?key={API_KEY}"
         logger.info(f"DEBUG: URL is ready (Key length: {len(API_KEY) if API_KEY else 0})")
         logger.info(f"DEBUG: CA_BUNDLE path: {CA_BUNDLE}")
-        # הנחיית המערכת
         system_instruction = _get_system_instruction(context)
 
-        # בניית המבנה שגוגל דורשת
         payload = {
             "contents": chat_history + [
                 {
@@ -91,7 +86,6 @@ def get_sentinel_response(user_question: str, context: str) -> str:
 
         headers = {"Content-Type": CONTENT_TYPE}
 
-        # שליחה ל-API עם timeout
         logger.info(f"שולח בקשה ל-Google Gemini API...")
         response = requests.post(
             url,
@@ -105,7 +99,6 @@ def get_sentinel_response(user_question: str, context: str) -> str:
             try:
                 result = response.json()
                 
-                # בדיקת מבנה התגובה
                 if not result.get("candidates"):
                     logger.error("תגובה ריקה מה-API")
                     return "שגיאה: תגובה לא תקינה מה-API"
@@ -113,11 +106,9 @@ def get_sentinel_response(user_question: str, context: str) -> str:
                 answer = result["candidates"][0]["content"]["parts"][0]["text"]
                 logger.info("קבלת תשובה בהצלחה")
 
-                # עדכון הזיכרון
                 chat_history.append({"role": "user", "parts": [{"text": user_question}]})
                 chat_history.append({"role": "model", "parts": [{"text": answer}]})
 
-                # שמירה על מגבלת הזיכרון
                 if len(chat_history) > MAX_HISTORY_LENGTH:
                     chat_history[:] = chat_history[-MAX_HISTORY_LENGTH:]
                     logger.debug(f"היסטוריה תורבתה ל-{MAX_HISTORY_LENGTH} הודעות")

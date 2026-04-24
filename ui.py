@@ -4,7 +4,6 @@
 זהו ממשק משתמש אינטראקטיבי לניתוח מסמכים באמצעות RAG.
 """
 import os
-# ביטול בדיקת SSL לצד הלקוח כדי שנטפרי לא תחסום תקשורת פנימית במחשב
 os.environ['PYTHONHTTPSVERIFY'] = '0'
 os.environ['no_proxy'] = 'localhost,127.0.0.1'
 import streamlit as st
@@ -13,11 +12,9 @@ import logging
 from typing import Optional, Dict
 from config import API_URL
 
-# הגדרת logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# קונפיג של הדף
 st.set_page_config(
     page_title="Sentinel AI",
     page_icon="🛡️",
@@ -25,7 +22,6 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# עיצוב CSS
 st.markdown("""
     <style>
     .stChatMessage { 
@@ -39,11 +35,9 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# כותרת הדף
 st.title("🛡️ Sentinel Intelligence System")
 st.markdown("_Intelligent Document Analysis with AI_")
 
-# Initialize session state
 if "messages" not in st.session_state:
     st.session_state.messages: list = []
 
@@ -51,18 +45,15 @@ if "current_file" not in st.session_state:
     st.session_state.current_file: Optional[str] = None
 
 
-# ----- תפריט הצד (Sidebar) -----
 with st.sidebar:
     st.header("📂 Intelligence Sources")
     
-    # העלאת קובץ
     uploaded_file = st.file_uploader(
         "Upload a document (PDF or TXT)",
         type=["pdf", "txt"],
         help="Choose a file to analyze"
     )
     
-    # הצגת פרטי הקובץ שהועלה
     if uploaded_file:
         col1, col2 = st.columns(2)
         with col1:
@@ -70,7 +61,6 @@ with st.sidebar:
         with col2:
             st.metric("File Type", uploaded_file.name.split(".")[-1].upper())
         
-        # בדיקה אם קובץ חדש הועלה
         if st.session_state.current_file != uploaded_file.name:
             st.session_state.current_file = uploaded_file.name
             st.session_state.messages = []  # ניקוי היסטוריה עם קובץ חדש
@@ -78,7 +68,6 @@ with st.sidebar:
     
     st.divider()
     
-    # קבוצת כפתורים
     col1, col2 = st.columns(2)
     
     with col1:
@@ -107,38 +96,29 @@ with st.sidebar:
     st.caption("Sentinel v1.0 | Powered by Gemini API")
 
 
-# ----- אזור הצ'אט הראשי -----
 st.subheader("💬 Conversation")
 
-# הצגת הודעות קודמות
 for message in st.session_state.messages:
     with st.chat_message(message["role"], avatar="🤖" if message["role"] == "assistant" else "👤"):
         st.markdown(message["content"])
 
 
-# ----- תיבת קלט וניתוח -----
 if prompt := st.chat_input("Ask a question about the document..."):
-    # הוספת שאלת המשתמש להיסטוריה
     st.session_state.messages.append({"role": "user", "content": prompt})
     
-    # הצגת שאלת המשתמש
     with st.chat_message("user", avatar="👤"):
         st.markdown(prompt)
     
-    # בדיקה שהחומר הועלה
     if not uploaded_file:
         st.warning("⚠️ Please upload a document first before asking questions.")
         logger.warning("Question asked without uploaded file")
     else:
-        # ניתוח המסמך
         with st.chat_message("assistant", avatar="🤖"):
             try:
                 with st.spinner("🔍 Analyzing the document..."):
-                    # הכנת הקובץ לשליחה
                     files = {"file": (uploaded_file.name, uploaded_file.getvalue())}
                     data = {"question": prompt}
                     
-                    # שליחה לשרת
                     response = requests.post(
                         f"{API_URL}/analyze",
                         files=files,
@@ -146,7 +126,6 @@ if prompt := st.chat_input("Ask a question about the document..."):
                         timeout=30
                     )
                     
-                    # טיפול בתגובה
                     if response.status_code == 200:
                         result = response.json()
                         answer = result.get("answer", "No answer received")
@@ -189,7 +168,6 @@ if prompt := st.chat_input("Ask a question about the document..."):
                 logger.error(f"Unexpected error: {str(e)}")
 
 
-# ----- עמודת מידע בתחתית -----
 st.divider()
 col1, col2, col3 = st.columns(3)
 

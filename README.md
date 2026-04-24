@@ -1,203 +1,147 @@
-# 🛡️ Sentinel Intelligence System
+# 🛡️ Sentinel AI
 
-מערכת ניתוח מסמכים חכמה המשלבת RAG (Retrieval-Augmented Generation) עם GenAI.
+מערכת חכמה לניתוח מסמכים בשילוב Retrieval-Augmented Generation (RAG) ו-GenAI.
 
-## 📋 תכנונים ופתרונות (Code Review Results)
-
-### ✅ בעיות שתוקנו
-
-#### 🔴 חמורות (Critical)
-1. **חשיפת API Key** - הועבר ל-.env
-2. **קוד כפול ב-ui.py** - דדופליקציה מלאה
-3. **API Key בחוקי** - עוקב מ-config.py
-
-#### 🟠 בינוניות (Medium)
-1. **ללא error handling** - הוסף try-except בכל המודולים
-2. **ללא Type Hints** - הוסף לכל הפונקציות
-3. **ללא Logging** - הוסף logging comprehensible
-4. **File validation** - הוסף בדיקות גודל וסוג קובץ
-5. **Response validation** - בדיקת תוכן התגובה מ-API
-
-#### 🔵 Minor
-1. **Hardcoded URLs** - העבר ל-config
-2. **ללא docstrings** - הוסף דוקומנטציה
-3. **ללא requirements.txt** - יצור फ़יל תלויות
+מערכת זו מאפשרת העלאת קבצי PDF/TXT, חיפוש סמנטי במסמכים, ויצירת תשובות חכמות באמצעות מנוע אינטיליגנציה.
 
 ---
 
-## 🚀 התחלה מהירה
+## 🎯 מה הפרויקט עושה
 
-### 1️⃣ התקנה
+Sentinel AI מספק:
+
+- ניתוח ומיצוי מידע מתוך קבצי PDF ו-TXT
+- חיתוך הטקסט לקטעי וקטורים לשאילתות סמנטיות
+- אחסון וחיפוש ב-ChromaDB
+- שילוב עם מודל שפה חיצוני לשאלות ותשובות
+- ממשק משתמש מבוסס Streamlit ו-API ב-FastAPI
+
+---
+
+## 🚀 התקנה מהירה
+
+### שלב 1 – הכנה
 
 ```bash
-# שכפל את המחסן
 git clone <repo-url>
 cd Sentinel-AI
-
-# צור virtual environment
 python -m venv venv
-venv\Scripts\activate  # Windows
-# או: source venv/bin/activate  # macOS/Linux
-
-# התקן תלויות
+venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-### 2️⃣ הגדרות
+### שלב 2 – קונפיגורציה
 
-העתק את `.env.example` ל-`.env` והגדר:
+צור קובץ `.env` עם משתני סביבה נדרשים.
 
-```bash
-cp .env .env
-```
+דוגמה:
 
-ערוך את `.env`:
 ```env
-GOOGLE_API_KEY=your_actual_api_key_here
+GOOGLE_API_KEY=your_api_key_here
 API_URL=http://127.0.0.1:8000
 LOG_LEVEL=INFO
 MAX_FILE_SIZE_MB=50
 ```
 
-### 3️⃣ הרצה
+> אם יש קובץ `.env.example`, העתק אותו ל-`.env` וערוך בהתאם.
 
-#### בשני terminal חלונות נפרדים:
+### שלב 3 – הרצה
 
-**Terminal 1 - FastAPI Server:**
+#### הרצת שרת ה-API
+
 ```bash
 python -m uvicorn main:app --reload --host 127.0.0.1 --port 8000
 ```
 
-**Terminal 2 - Streamlit UI:**
+#### הרצת ממשק המשתמש
+
 ```bash
 streamlit run ui.py
 ```
 
-הממשק פתח באופן אוטומטי ב-`http://localhost:8501`
+לאחר מכן גש אל:
+
+`http://localhost:8501`
 
 ---
 
-## 📁 מבנה הפרויקט
+## 🧱 מבנה הפרויקט
 
-```
-Sentinel-AI/
-├── main.py              # FastAPI endpoint עבור ניתוח
-├── agent.py             # שיטות האינטליגנציה (Gemini)
-├── vector_manager.py    # ניהול Vector Database (ChromaDB)
-├── ui.py                # ממשק Streamlit
-├── config.py            # הגדרות וקבועים
-├── requirements.txt     # תלויות Python
-├── .env.example         # דוגמת משתנים סביבה
-├── .gitignore          # קבצים להתעלם
-└── sentinel_db/        # (יצור אוטומטית) ChromaDB storage
-```
+- `main.py` – נקודת כניסה ל-FastAPI
+- `ui.py` – ממשק Streamlit להצגת העלאות ושאילתות
+- `agent.py` – לוגיקה של יצירת prompt ושליחה למודל השפה
+- `vector_manager.py` – ניהול חיתוך טקסט, יצירת embeddings ו-ChromaDB
+- `config.py` – משתני קונפיגורציה וקבועים מרכזיים
+- `requirements.txt` – רשימת התלויות
+- `sentinel_db/` – מאגר הנתונים של ChromaDB
 
 ---
 
-## 🔍 זרימת התהליך
+## 🧭 זרימת עבודה
 
-```
-User Upload (PDF/TXT)
-         ↓
-    FastAPI Processing
-         ↓
-    PDF/TXT Extraction
-         ↓
-    Vector Chunking (500 chars each)
-         ↓
-    ChromaDB Storage
-         ↓
-    Semantic Search (Query → Retrieve)
-         ↓
-    Prompt Engineering
-         ↓
-    Google Gemini API
-         ↓
-    Response to User
-         ↓
-    Chat History Management
-```
+1. משתמש מעלה קובץ PDF או TXT
+2. הטקסט מפוצל לקטעי chunks לצורך חיפוש סמנטי
+3. היווצרות embeddings ושמירה ב-ChromaDB
+4. ביצוע חיפוש סמנטי לפי השאלה של המשתמש
+5. בניית prompt חכם למודל השפה
+6. קבלת תשובה מתוך מודל השפה
+7. החזרת תוצאה למשתמש
 
 ---
 
-## 🛡️ עקרונות אבטחה
-
-- ✅ **ללא hardcoded keys** - משתמש ב-.env
-- ✅ **Type hints** - בדיקה סטטית של types
-- ✅ **Error handling** - כל שגיאה מטופלת
-- ✅ **Logging** - ניטור מלא של אירועים
-- ✅ **File validation** - בדיקת גודל וסוג
-- ✅ **Response validation** - בדיקת JSON structures
-
----
-
-## 📊 תכונות עדכניות
-
-### ✨ שיפורים ב-Code Review
-
-1. **Type Hints על כל הפונקציות**
-   ```python
-   def process_and_store(text: str, chunk_size: int = 500) -> str:
-   ```
-
-2. **Comprehensive Error Handling**
-   ```python
-   try:
-       # עיבוד
-   except CustomError as e:
-       logger.error(...) 
-       raise HTTPException(...)
-   ```
-
-3. **Logging System**
-   ```python
-   logger.info("Message uploaded successfully")
-   logger.error(f"Error occurred: {str(e)}")
-   ```
-
-4. **Configuration Management**
-   - Environment variables
-   - Centralized config.py
-   - Constants definitions
-
-5. **API Documentation**
-   - Docstrings on all functions
-   - Type hints in parameters
-   - Return value documentation
-
----
-
-## 🔧 פונקציות API
+## 🔧 שימוש ב-API
 
 ### POST `/analyze`
-ניתוח מסמך וענתי לשאלה
 
-**Request:**
+ניתוח קובץ ומתן תשובה לשאלה.
+
+#### Request
+- `question` – טקסט השאלה
+- `file` – קובץ PDF או TXT
+
+#### Response
 ```json
 {
-  "question": "מי היה הנושא הראשי?",
-  "file": <binary PDF/TXT>
-}
-```
-
-**Response:**
-```json
-{
-  "answer": "התשובה של סנטינל...",
+  "answer": "...",
   "status": "success"
 }
 ```
 
 ### POST `/reset`
-איפוס היסטוריית השיחה
 
-**Response:**
+נקה את היסטוריית השיחה ויפתח מחדש את מצב המערכת.
+
+#### Response
 ```json
 {
   "status": "History cleared",
   "success": true
 }
 ```
+
+---
+
+## 🛡️ אבטחה וסטנדרטים
+
+- הפרדת סביבות עם `.env`
+- אין מפתחות מוצמדים בקוד
+- טיפול בשגיאות כללי באמצעות `try/except`
+- לבדיקה ותיעוד סוגי הקלט והפלט
+- שמירה על מובנות בקוד וכתיבת docstrings
+
+---
+
+## 📌 המלצות לפיתוח
+
+- הוסף `.env.example` אם אינו קיים
+- הקפד על בדיקות יחידה ל-`vector_manager.py` ול-`agent.py`
+- אפשר שיפור לוגיקה של ניהול שיחה לחוויית משתמש מתקדמת
+
+---
+
+## 📝 הערות
+
+פרויקט זה מתאים לפיתוח ממשקי חיפוש ידע מבוססי מסמכים, ניסוי עם מודלי שפה ושיפור תהליכי RAG בארכיטקטורה פשוטה ומקצועית.
 
 ### GET `/health`
 בדיקת בריאות של ה-API
