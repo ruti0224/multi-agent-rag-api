@@ -1,146 +1,103 @@
 import chromadb
 import uuid
 import logging
-from typing import Optional, List
+import os
+from typing import List, Dict
+from sentence_transformers import SentenceTransformer
 
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+# הגדרת לוגים מקצועית
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger("VectorStore")
 
 
-class SimpleLocalEmbedding:
+class VectorDBManager:
     """
-    Embedding מקומי פשוט לעוקף מגבלות רשת.
-    
-    בעתיד, כדאי להחליף ב-SentenceTransformer:
-    from sentence_transformers import SentenceTransformer
-    model = SentenceTransformer('msmarco-distilbert-base-tas-b')
+    ניהול מסד נתונים וקטורי מבוסס ChromaDB.
+    המחלקה מרכזת את כל פעולות ה-RAG: חיתוך, וקטוריזציה, אחסון וחיפוש.
     """
-    
-    def name(self) -> str:
-        """שם ה-embedding"""
-        return "SimpleLocal"
 
-    def __call__(self, input: List[str]) -> List[List[float]]:
-        """
-        יצירת וקטורים embedding.
-        כרגע מחזירים וקטורים ריקים - זה סתם placeholder.
-        
-        Args:
-            input: רשימת טקסטים
-        
-        Returns:
-            רשימת וקטורים (כל אחד באורך 384)
-        """
-        if not input:
-            return []
-        return [[0.0] * 384 for _ in input]
+    def __init__(self, db_path: str = "./sentinel_db", collection_name: str = "sentinel_knowledge"):
+        try:
+            if not os.path.exists(db_path):
+                os.makedirs(db_path)
+            self.client = chromadb.PersistentClient(path=db_path)
+            logger.info("Initializing SentenceTransformer model...")
+            self.model = SentenceTransformer('./local_model')
+            self.collection = self.client.get_or_create_collection(
+                name=collection_name,
+                embedding_function=self.embedding_wrapper
+            )
+            logger.info(f"VectorDB initialized: {collection_name}")
+        except Exception as e:
+            logger.error(f"VectorDB initialization failed: {str(e)}")
+            raise
 
+    def embedding_wrapper(self, input_texts: List[str]) -> List[List[float]]:
+        """עטיפה שמחברת בין ChromaDB למודל ה-SentenceTransformer"""
+        embeddings = self.model.encode(input_texts)
+        return embeddings.tolist()
 
-try:
-    client = chromadb.PersistentClient(path="./sentinel_db")
-    logger.info("מסד נתונים וקטורי אותחל בהצלחה")
-except Exception as e:
-    logger.error(f"שגיאה באתחול ChromaDB: {str(e)}")
-    raise
+    def _smart_chunking(self, text: str, chunk_size: int, overlap: int = 100) -> List[str]:
+        paragraphs = text.split('\n')
+        chunks = []
+        current_chunk = ""
 
-try:
-    collection = client.get_or_create_collection(
-        name="sentinel_knowledge",
-        embedding_function=SimpleLocalEmbedding()
-    )
-    logger.info("Collections ה-'sentinel_knowledge' אותחל")
-except Exception as e:
-    logger.error(f"שגיאה ביצירת collection: {str(e)}")
-    raise
+        for para in paragraphs:
+            if len(current_chunk) + len(para) <= chunk_size:
+                current_chunk += para + "\n"
+            else:
+                if current_chunk:
+                    chunks.append(current_chunk.strip())
+                current_chunk = para + "\n"
 
+        if current_chunk:
+            chunks.append(current_chunk.strip())
+        return chunks
+    def process_and_store(self, text: str, chunk_size: int = 600) -> Dict[str, any]:
+        """עיבוד טקסט גולמי ואחסונו ב-DB"""
+        if not text or not text.strip():
+            raise ValueError("Input text cannot be empty")
 
-def process_and_store(text: str, chunk_size: int = 500) -> str:
-    """
-    עיבוד וחסן של טקסט ב-Vector Database.
-    
-    הפונקציה חותכת טקסט ארוך לנתחים ושומרת אותם ב-Chroma.
-    
-    Args:
-        text: הטקסט הגולמי (מ-PDF או TXT)
-        chunk_size: גודל כל נתח בתווים (ברירת מחדל: 500)
-    
-    Returns:
-        הודעת סטטוס על התהליך
-    
-    Raises:
-        ValueError: אם הטקסט ריק
-        Exception: שגיאה בדיסק או בנתונים
-    """
-    if not text or not text.strip():
-        logger.warning("ניסיון להעביר טקסט ריק")
-        raise ValueError("לא ניתן לעבד טקסט ריק")
+        try:
+            chunks = self._smart_chunking(text, chunk_size)
+            ids = [str(uuid.uuid4()) for _ in chunks]
+            metadatas = [{"source": "document_upload", "chunk_index": i} for i in range(len(chunks))]
 
-    try:
-        chunks: List[str] = [
-            text[i:i + chunk_size].strip()
-            for i in range(0, len(text), chunk_size)
-            if text[i:i + chunk_size].strip()  # דילוג על chunks ריקים
-        ]
+            self.collection.add(
+                documents=chunks,
+                ids=ids,
+                metadatas=metadatas
+            )
+            logger.info(f"Successfully stored {len(chunks)} chunks.")
+            return {"status": "success", "count": len(chunks)}
+        except Exception as e:
+            logger.error(f"Storage error: {str(e)}")
+            raise
 
-        if not chunks:
-            raise ValueError("לא היו chunks תק אחרי עיבוד")
+    def query_database(self, question: str, n_results: int = 3) -> str:
+        """חיפוש סמנטי לקבלת הקשר (Context)"""
+        if not question or not question.strip():
+            return ""
+        try:
+            results = self.collection.query(query_texts=[question], n_results=n_results)
+            if results and results.get("documents") and results["documents"][0]:
+                return "\n---\n".join(results["documents"][0])
+            return ""
+        except Exception as e:
+            logger.error(f"Query error: {str(e)}")
+            return ""
 
-        ids: List[str] = [str(uuid.uuid4()) for _ in chunks]
-        collection.add(documents=chunks, ids=ids)
-        
-        logger.info(f"הוספו {len(chunks)} chunks בהצלחה ל-DB")
-        return f"✓ עובדו {len(chunks)} chunks בהצלחה"
+    def clear_database(self):
+        """ניקוי מסד הנתונים"""
+        try:
+            existing_ids = self.collection.get()["ids"]
+            if existing_ids:
+                self.collection.delete(ids=existing_ids)
+                logger.info("Database cleared.")
+        except Exception as e:
+            logger.error(f"Clear error: {str(e)}")
 
-    except Exception as e:
-        logger.error(f"שגיאה בעיבוד/אחסון: {str(e)}")
-        raise
-
-
-def query_database(question: str, n_results: int = 3) -> str:
-    """
-    חיפוש בווקטור DB לטקסט רלוונטי.
-    
-    Args:
-        question: שאלת החיפוש
-        n_results: כמה תוצאות להחזיר (ברירת מחדל: 3)
-    
-    Returns:
-        הטקסט הרלוונטי ביותר, או מחרוזת ריקה אם לא נמצא
-    """
-    if not question or not question.strip():
-        logger.warning("שאלה ריקה הועברה לחיפוש")
-        return ""
-
-    try:
-        results = collection.query(
-            query_texts=[question.strip()],
-            n_results=n_results
-        )
-
-        if results and results.get("documents") and results["documents"][0]:
-            relevant_docs = results["documents"][0][:2]
-            combined_context = " ".join(relevant_docs)
-            
-            logger.info(f"נמצאו {len(relevant_docs)} תוצאות רלוונטיות")
-            return combined_context
-
-        logger.info("לא נמצאו תוצאות רלוונטיות")
-        return ""
-
-    except Exception as e:
-        logger.error(f"שגיאה בחיפוש: {str(e)}")
-        raise
-
-
-def clear_database() -> None:
-    """
-    ניקוי מלא של מסד הנתונים (למטרות בדיקה).
-    """
-    try:
-        all_ids = collection.get()["ids"]
-        if all_ids:
-            collection.delete(ids=all_ids)
-            logger.info(f"נמחקו {len(all_ids)} דוקומנטים")
-    except Exception as e:
-        logger.error(f"שגיאה בניקוי: {str(e)}")
-        raise
+vector_db = VectorDBManager()
