@@ -1,61 +1,60 @@
-from fastapi import FastAPI, UploadFile, File, Form, HTTPException
-from agent import get_sentinel_response, clear_chat_history
-from vector_manager import vector_db
-from fastapi.middleware.cors import CORSMiddleware
-from config import MAX_FILE_SIZE_BYTES
-import io
+import uvicorn
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException, BackgroundTasks, Request
+from fastapi.responses import StreamingResponse, JSONResponse
+from app.core.processor import FileProcessor
+from app.infrastructure.vector_store import vector_store
+from app.core.engine import sentinel_rag_flow, generate_document_summary
 import logging
-from pypdf import PdfReader
-
+from fastapi.responses import JSONResponse
+# הגדרת לוגים
 logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("Main")
 
-app = FastAPI(title="Sentinel Intelligence API")
+app = FastAPI(title="Sentinel AI")
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    error_msg = str(exc)
+    logger.error(f"Global Error Captured: {error_msg}")
+    if "api_key" in error_msg.lower():
+        return JSONResponse(status_code=401, content={"detail": "שגיאה במפתח ה-API. אנא בדקי את קובץ ה-env."})
+    if "connection" in error_msg.lower():
+        return JSONResponse(status_code=502, content={"detail": "שגיאת חיבור לרשת. ודאי שאין חסימה לשרתי OpenAI."})
+    return JSONResponse(status_code=500, content={"detail": "קרתה שגיאה פנימית בשרת Sentinel."})
+
+
+@app.get("/summary/{filename}")
+async def get_summary(filename: str):
+    summary = await generate_document_summary(filename)
+    return {"summary": summary}
 
 
 @app.post("/analyze")
-async def analyze_file(question: str = Form(...), file: UploadFile = File(...)):
-    if file_extension == ".pdf":
-        pdf_reader = PdfReader(io.BytesIO(content))
-        text = "".join([page.extract_text() or "" for page in pdf_reader.pages])
-
-
+async def analyze_file(
+        question: str = Form(...),
+        file: UploadFile = File(...)
+):
     try:
         content = await file.read()
         if file.filename.endswith(".pdf"):
-            pdf_reader = PdfReader(io.BytesIO(content))
-            text = "".join([p.extract_text() for p in pdf_reader.pages])
-        if not text.strip():
-            logger.error("The PDF appears to be an image or contains no readable text")
-            raise HTTPException(400, "לא ניתן לקרוא טקסט מה-PDF. ודא שהקובץ אינו סרוק כתמונה.")
+            chunks = await FileProcessor.process_pdf(content)
+        elif file.filename.endswith(".txt"):
+            chunks = await FileProcessor.process_txt(content)
         else:
-            text = content.decode("utf-8")
+            raise HTTPException(status_code=400, detail="סוג קובץ לא נתמך.")
 
-        # שימוש במופע הנקי של ה-Vector DB
-        vector_db.process_and_store(text)
-        context = vector_db.query_database(question)
-        answer = get_sentinel_response(question, context)
+        await vector_store.add_documents(chunks, file.filename)
 
-        return {"answer": answer, "status": "success"}
+        # קבלת התשובה והמקורות (ללא stream)
+        answer, sources = await sentinel_rag_flow(question, file.filename)
+
+        # החזרת התשובה כ-JSON
+        return JSONResponse(content={"answer": answer, "sources": sources})
+
     except Exception as e:
-        logger.error(f"Error: {str(e)}")
-        raise HTTPException(500, str(e))
-
-
-@app.post("/reset")
-async def reset():
-    clear_chat_history()
-    vector_db.clear_database()
-    return {"status": "Reset successful"}
-
-
-@app.get("/health")
-async def health():
-    return {"status": "healthy"}
+        logger.error(f"Error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+if __name__ == "__main__":
+    logger.info("Starting Sentinel AI Server...")
+    uvicorn.run(app, host="127.0.0.1", port=8000)

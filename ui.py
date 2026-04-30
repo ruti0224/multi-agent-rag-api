@@ -1,141 +1,107 @@
 import streamlit as st
 import requests
-import logging
-from typing import Optional
-from config import API_URL
 
-# הגדרת לוגים
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+st.set_page_config(page_title="Sentinel AI | Executive Analysis", page_icon="🛡️", layout="wide")
 
-# הגדרות עמוד
-st.set_page_config(
-    page_title="Sentinel AI",
-    page_icon="🛡️",
-    layout="wide",
-    initial_sidebar_state="expanded"
-)
-
-# עיצוב מותאם אישית (CSS)
 st.markdown("""
     <style>
-    .stChatMessage { 
-        border-radius: 15px; 
-        padding: 15px; 
-        margin-bottom: 10px;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
-    }
-    .main { background-color: #f8f9fa; }
+    .stApp { background-color: #0e1117; }
+    .stAlert { background-color: #161b22; border-right: 5px solid #238636; border-radius: 12px; }
+    .stChatMessage { border-radius: 15px; margin-bottom: 15px; }
+    h1, h2, h3 { color: #e6edf3 !important; }
     </style>
-    """, unsafe_allow_html=True)
+""", unsafe_allow_html=True)
 
-# אתחול משתני Session State
+st.title("🛡️ Sentinel AI")
+st.markdown("##### *מערכת ניתוח מודיעין וסריקת מסמכים מתקדמת*")
+
 if "messages" not in st.session_state:
     st.session_state.messages = []
+if "current_summary" not in st.session_state:
+    st.session_state.current_summary = None
+if "last_processed_file" not in st.session_state:
+    st.session_state.last_processed_file = None
 
-if "current_file" not in st.session_state:
-    st.session_state.current_file = None
-
-# כותרת ראשית
-st.title("🛡️ Sentinel Intelligence System")
-st.markdown("_ניתוח מסמכים חכם מבוסס בינה מלאכותית_")
-
-# סרגל צד (Sidebar)
 with st.sidebar:
-    st.header("📂 מקורות מידע")
+    st.image("https://img.icons8.com/fluency/96/shield.png", width=80)
+    st.header("📂 ניהול מסמכים")
 
-    uploaded_file = st.file_uploader(
-        "העלה מסמך (PDF או TXT)",
-        type=["pdf", "txt"],
-        help="בחר קובץ כדי להתחיל בניתוח"
-    )
-
-    if uploaded_file:
-        # הצגת פרטי הקובץ
-        col1, col2 = st.columns(2)
-        with col1:
-            st.metric("גודל קובץ", f"{len(uploaded_file.getvalue()) / 1024:.1f} KB")
-        with col2:
-            st.metric("סוג", uploaded_file.name.split(".")[-1].upper())
-
-        # לוגיקת איפוס בעת החלפת קובץ (שלב 5 בתוכנית)
-        if st.session_state.current_file != uploaded_file.name:
-            try:
-                # קריאה לשרת לביצוע Reset מלא (ניקוי DB והיסטוריה)
-                with st.spinner("מכין סביבה לקובץ חדש..."):
-                    requests.post(f"{API_URL}/reset", timeout=5)
-
-                st.session_state.current_file = uploaded_file.name
-                st.session_state.messages = []
-                st.success(f"המסמך {uploaded_file.name} נטען בהצלחה")
-                st.rerun()
-            except Exception as e:
-                logger.error(f"Error during auto-reset: {e}")
-                st.error("שגיאה בחיבור לשרת לצורך איפוס")
+    uploaded_file = st.file_uploader("בחר קובץ לניתוח", type=["pdf", "txt"])
 
     st.divider()
+    if st.button("🗑️ נקה היסטוריית שיחה", use_container_width=True):
+        st.session_state.messages = []
+        st.session_state.current_summary = None
+        st.session_state.last_processed_file = None
+        st.rerun()
 
-    # כפתור איפוס ידני
-    if st.button("🔄 נקה שיחה", use_container_width=True):
-        try:
-            response = requests.post(f"{API_URL}/reset", timeout=5)
-            if response.status_code == 200:
-                st.session_state.messages = []
-                st.success("השיחה אופסה")
-                st.rerun()
-        except Exception as e:
-            st.error("לא ניתן להתחבר לשרת")
+# לוגיקת תקציר מנהלים וניקוי מסך בהחלפת קובץ
+if uploaded_file:
+    if st.session_state.last_processed_file != uploaded_file.name:
+        # איפוס מוחלט של זיכרון הממשק לקובץ החדש
+        st.session_state.current_summary = None
+        st.session_state.messages = []
 
-    st.caption("Sentinel v1.0 | Powered by Gemini API")
+        with st.status(f"🔍 מנתח את {uploaded_file.name}...", expanded=True) as status:
+            try:
+                # שליחת בקשה לעיבוד ושמירה ב-DB (אם לא קיים)
+                files = {"file": (uploaded_file.name, uploaded_file.getvalue(), "application/octet-stream")}
+                requests.post("http://127.0.0.1:8000/analyze",
+                              data={"question": "init", "filename": uploaded_file.name}, files=files)
 
-# תצוגת הצ'אט
-st.subheader("💬 שיחה עם Sentinel")
+                # משיכת הסיכום
+                response = requests.get(f"http://127.0.0.1:8000/summary/{uploaded_file.name}")
+                if response.status_code == 200:
+                    st.session_state.current_summary = response.json()["summary"]
+                    st.session_state.last_processed_file = uploaded_file.name
+                    status.update(label="✅ הניתוח הושלם!", state="complete", expanded=False)
+            except Exception as e:
+                st.error(f"שגיאת חיבור לשרת: {e}")
 
+    if st.session_state.current_summary:
+        st.info(f"💡 **תקציר מנהלים עבור {uploaded_file.name}:**\n\n{st.session_state.current_summary}")
+
+# תצוגת צ'אט
 for message in st.session_state.messages:
-    with st.chat_message(message["role"], avatar="🤖" if message["role"] == "assistant" else "👤"):
+    with st.chat_message(message["role"]):
         st.markdown(message["content"])
 
-# קלט מהמשתמש
+# קלט ושליחה
 if prompt := st.chat_input("שאל שאלה על המסמך..."):
-    # הצגת שאלת המשתמש
-    st.session_state.messages.append({"role": "user", "content": prompt})
-    with st.chat_message("user", avatar="👤"):
-        st.markdown(prompt)
-
     if not uploaded_file:
-        st.warning("⚠️ אנא העלה מסמך לפני שליחת שאלה.")
+        st.warning("אנא העלה קובץ (PDF או TXT) כדי להתחיל.")
     else:
-        with st.chat_message("assistant", avatar="🤖"):
+        st.session_state.messages.append({"role": "user", "content": prompt})
+        with st.chat_message("user"):
+            st.markdown(prompt)
+
+        with st.chat_message("assistant"):
+            message_placeholder = st.empty()
+            full_response = ""
+            sources_list = []
+
+            files = {"file": (uploaded_file.name, uploaded_file.getvalue(), "application/octet-stream")}
+            data = {"question": prompt, "filename": uploaded_file.name}
+
             try:
-                with st.spinner("מנתח את המסמך..."):
-                    # הכנת הנתונים לשליחה
-                    files = {"file": (uploaded_file.name, uploaded_file.getvalue())}
-                    data = {"question": prompt}
+                with requests.post("http://127.0.0.1:8000/analyze", data=data, files=files, stream=True) as r:
+                    if r.status_code == 200:
+                        for chunk in r.iter_content(chunk_size=None, decode_unicode=True):
+                            if chunk:
+                                if chunk.startswith("SOURCES:"):
+                                    raw_sources = chunk.split("---")[0].replace("SOURCES:", "").strip()
+                                    sources_list = [s.strip() for s in raw_sources.split(",") if s.strip()]
+                                    continue
+                                full_response += chunk
+                                message_placeholder.markdown(full_response + "▌")
 
-                    response = requests.post(
-                        f"{API_URL}/analyze",
-                        files=files,
-                        data=data,
-                        timeout=45
-                    )
+                        final_text = full_response
+                        if sources_list:
+                            final_text += f"\n\n---\n**📄 מקורות:** {', '.join(sources_list)}"
 
-                    if response.status_code == 200:
-                        result = response.json()
-                        answer = result.get("answer", "לא התקבלה תשובה מהשרת")
-
-                        st.markdown(answer)
-                        st.session_state.messages.append({
-                            "role": "assistant",
-                            "content": answer
-                        })
+                        message_placeholder.markdown(final_text)
+                        st.session_state.messages.append({"role": "assistant", "content": final_text})
                     else:
-                        st.error(f"שגיאת שרת: {response.status_code}")
-
-            except requests.exceptions.ConnectionError:
-                st.error("🔌 שגיאת חיבור: וודא ששרת ה-API רץ (Uvicorn)")
+                        st.error(f"שגיאת שרת: {r.status_code}")
             except Exception as e:
-                st.error(f"🚨 שגיאה בלתי צפויה: {str(e)}")
-
-# שורת סטטוס תחתונה
-st.divider()
-st.caption(f"📊 הודעות בשיחה: {len(st.session_state.messages)} | מערכת מאובטחת")
+                st.error(f"שגיאת תקשורת: {e}")
